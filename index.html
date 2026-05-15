@@ -2,38 +2,89 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hand Gesture Recognition - Ardian</title>
+    <title>Hand Gesture Recognition (Clean)</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: #f0f2f5; margin: 0; padding: 20px; }
-        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        #video-container { position: relative; width: 640px; height: 480px; margin: auto; background: #000; border-radius: 10px; overflow: hidden; }
-        video, canvas { position: absolute; left: 0; top: 0; width: 640px; height: 480px; transform: rotateY(180deg); }
-        #output-text { margin-top: 20px; font-size: 2rem; font-weight: bold; color: #2c3e50; min-height: 3rem; }
-        .info { color: #666; font-size: 0.9rem; }
+        body { text-align: center; font-family: sans-serif; background: #222; color: white; }
+        #video-container { position: relative; width: 640px; height: 480px; margin: auto; border-radius: 10px; overflow: hidden; border: 2px solid #555; }
+        video { width: 640px; height: 480px; transform: rotateY(180deg); }
+        #output-text { margin-top: 20px; font-size: 2rem; font-weight: bold; color: #00ffcc; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h2>Hand Gesture Voice Trigger</h2>
+    <h2>Arahkan Tangan ke Kamera</h2>
     <div id="video-container">
         <video id="webcam" autoplay playsinline></video>
-        <canvas id="output_canvas"></canvas>
     </div>
-    <div id="output-text">Menunggu Gestur...</div>
-    <p class="info">Gunakan jari: 1 (Halo), 2 (Nama), 3 (Ardian), 4 (Salam Kenal)</p>
-</div>
+    <div id="output-text">Mendeteksi...</div>
 
-<!-- Load MediaPipe Hands -->
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
-<script>
-// --- KONFIGURASI TEKS & SUARA ---
-const GESTURE_MAP = {
-    1: { text: "Halo semua", voice: "Halo semua" },
+    <script>
+        const GESTURE_MAP = {
+            1: "Halo semua",
+            2: "Perkenalkan nama saya",
+            3: "ARDIAN WISNU PRADANA",
+            4: "Salam kenal yaaa"
+        };
+
+        let lastGesture = null;
+        const videoElement = document.getElementById('webcam');
+        const outputDisplay = document.getElementById('output-text');
+
+        function speak(text) {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'id-ID';
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function onResults(results) {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                const fingerCount = countFingers(landmarks);
+                
+                if (GESTURE_MAP[fingerCount] && lastGesture !== fingerCount) {
+                    outputDisplay.innerText = GESTURE_MAP[fingerCount];
+                    speak(GESTURE_MAP[fingerCount]);
+                    lastGesture = fingerCount;
+                    setTimeout(() => { lastGesture = null; }, 3000);
+                }
+            }
+        }
+
+        function countFingers(landmarks) {
+            const tips = [8, 12, 16, 20];
+            let count = 0;
+            // Deteksi jari telunjuk, tengah, manis, kelingking
+            tips.forEach(tip => {
+                if (landmarks[tip].y < landmarks[tip - 2].y) count++;
+            });
+            return count;
+        }
+
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.7
+        });
+
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 640, height: 480
+        });
+        camera.start();
+    </script>
+</body>
+</html>
     2: { text: "Perkenalkan nama saya", voice: "Perkenalkan nama saya" },
     3: { text: "ARDIAN WISNU PRADANA", voice: "Ardian Wisnu Pradana" },
     4: { text: "Salam kenal yaaa", voice: "Salam kenal yaaa" }
