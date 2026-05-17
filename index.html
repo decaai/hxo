@@ -2,22 +2,36 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>Hand Gesture Recognition (Clean)</title>
+    <title>Hand Gesture Recognition - Ardian</title>
     <style>
-        body { text-align: center; font-family: sans-serif; background: #222; color: white; }
-        #video-container { position: relative; width: 640px; height: 480px; margin: auto; border-radius: 10px; overflow: hidden; border: 2px solid #555; }
-        video { width: 640px; height: 480px; transform: rotateY(180deg); }
-        #output-text { margin-top: 20px; font-size: 2rem; font-weight: bold; color: #00ffcc; }
+        body { text-align: center; font-family: 'Segoe UI', Arial, sans-serif; background: #1a1a1a; color: white; margin: 0; padding: 20px; }
+        h2 { margin-bottom: 5px; color: #f3f3f3; }
+        .sub { color: #888; font-size: 0.9rem; margin-bottom: 20px; }
+        
+        #video-container { position: relative; width: 640px; height: 480px; margin: auto; border-radius: 15px; overflow: hidden; border: 3px solid #333; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        video { width: 640px; height: 480px; transform: rotateY(180deg); object-fit: cover; }
+        
+        /* Container untuk handmark indikator di layar */
+        #handmark-container { position: absolute; top: 0; left: 0; width: 640px; height: 480px; pointer-events: none; transform: rotateY(180deg); }
+        .dot { position: absolute; width: 15px; height: 15px; background: #00ffcc; border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 10px #00ffcc, 0 0 20px #00ffcc; transition: all 0.1s ease; }
+        
+        #output-text { margin-top: 25px; font-size: 2.2rem; font-weight: bold; color: #00ffcc; min-height: 60px; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
     </style>
 </head>
 <body>
 
     <h2>Arahkan Tangan ke Kamera</h2>
+    <p class="sub">Angkat jari 1 sampai 4 untuk memicu suara Google</p>
+    
     <div id="video-container">
         <video id="webcam" autoplay playsinline></video>
+        <!-- Tempat merender titik handmark buatan yang bersih -->
+        <div id="handmark-container"></div>
     </div>
+    
     <div id="output-text">Mendeteksi...</div>
 
+    <!-- MediaPipe Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
@@ -32,36 +46,85 @@
         let lastGesture = null;
         const videoElement = document.getElementById('webcam');
         const outputDisplay = document.getElementById('output-text');
+        const handmarkContainer = document.getElementById('handmark-container');
 
+        // Fungsi memperjelas & memaksimalkan suara Google Indonesia
         function speak(text) {
-            window.speechSynthesis.cancel();
+            window.speechSynthesis.cancel(); // Hentikan suara tertunda
             const utterance = new SpeechSynthesisUtterance(text);
+            
+            // Mengambil semua jenis suara yang tersedia di browser perangkat Anda
+            const voices = window.speechSynthesis.getVoices();
+            
+            // Mencari suara Google Bahasa Indonesia yang jernih (biasanya ada di Chrome/Edge)
+            const googleIDVoice = voices.find(voice => voice.lang.includes('id-ID') && voice.name.includes('Google'));
+            const anyIDVoice = voices.find(voice => voice.lang.includes('id-ID'));
+            
+            // Prioritaskan suara milik Google Indonesia, jika tidak ada pakai Bahasa Indonesia standar
+            if (googleIDVoice) {
+                utterance.voice = googleIDVoice;
+            } else if (anyIDVoice) {
+                utterance.voice = anyIDVoice;
+            }
+            
             utterance.lang = 'id-ID';
+            utterance.volume = 1.0; // Volume Maksimal (0.0 sampai 1.0)
+            utterance.rate = 0.95;  // Kecepatan bicara (sedikit diperlambat agar artikulasi jelas)
+            utterance.pitch = 1.0;  // Nada normal
+            
             window.speechSynthesis.speak(utterance);
         }
 
+        // Memastikan list suara browser termuat sempurna saat aplikasi siap
+        if (typeof speechSynthesis !== 'undefined' && speechSynthesis.onvoiceschanged !== undefined) {
+            speechSynthesis.onvoiceschanged = () => {};
+        }
+
         function onResults(results) {
+            // Bersihkan handmark lama setiap frame berganti
+            handmarkContainer.innerHTML = '';
+
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const landmarks = results.multiHandLandmarks[0];
-                const fingerCount = countFingers(landmarks);
                 
-                if (GESTURE_MAP[fingerCount] && lastGesture !== fingerCount) {
-                    outputDisplay.innerText = GESTURE_MAP[fingerCount];
-                    speak(GESTURE_MAP[fingerCount]);
-                    lastGesture = fingerCount;
+                // Ambil info jari yang aktif
+                const { count, activeTips } = countAndGetFingers(landmarks);
+                
+                // Gambar Handmark Glowing hanya di ujung jari yang sedang aktif berdiri
+                activeTips.forEach(tipIndex => {
+                    const point = landmarks[tipIndex];
+                    const dot = document.createElement('div');
+                    dot.className = 'dot';
+                    // Konversi data koordinat normalisasi (0-1) ke bentuk Piksel (px) layar
+                    dot.style.left = `${point.x * 640}px`;
+                    dot.style.top = `${point.y * 480}px`;
+                    handmarkContainer.appendChild(dot);
+                });
+                
+                // Eksekusi Teks dan Suara Google
+                if (GESTURE_MAP[count] && lastGesture !== count) {
+                    outputDisplay.innerText = GESTURE_MAP[count];
+                    speak(GESTURE_MAP[count]);
+                    lastGesture = count;
+                    // Jeda waktu kunci 3 detik sebelum menerima gestur baru
                     setTimeout(() => { lastGesture = null; }, 3000);
                 }
             }
         }
 
-        function countFingers(landmarks) {
-            const tips = [8, 12, 16, 20];
+        function countAndGetFingers(landmarks) {
+            const tips = [8, 12, 16, 20]; // Indeks ujung jari: telunjuk, tengah, manis, kelingking
             let count = 0;
-            // Deteksi jari telunjuk, tengah, manis, kelingking
+            let activeTips = [];
+
             tips.forEach(tip => {
-                if (landmarks[tip].y < landmarks[tip - 2].y) count++;
+                // Jika posisi ujung jari lebih tinggi di layar dibanding sendi pangkalnya
+                if (landmarks[tip].y < landmarks[tip - 2].y) {
+                    count++;
+                    activeTips.push(tip); // Simpan indeks untuk digambar titik handmark-nya
+                }
             });
-            return count;
+            return { count, activeTips };
         }
 
         const hands = new Hands({
@@ -71,8 +134,8 @@
         hands.setOptions({
             maxNumHands: 1,
             modelComplexity: 1,
-            minDetectionConfidence: 0.7,
-            minTrackingConfidence: 0.7
+            minDetectionConfidence: 0.75,
+            minTrackingConfidence: 0.75
         });
 
         hands.onResults(onResults);
